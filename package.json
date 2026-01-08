@@ -1,0 +1,32 @@
+{
+  "name": "media-toolkit",
+  "version": "1.0.0",
+  "description": "Server-side media processing toolkit",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npm run build && npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "npm --prefix backend run dev",
+    "build": "npm --prefix frontend run build",
+    "start": "npm --prefix backend start",
+    "install:all": "npm install && npm --prefix backend install && npm --prefix frontend install",
+    "setup": "npm run install:all && npm run build"
+  },
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "keywords": [
+    "sharp",
+    "ffmpeg",
+    "media-processing",
+    "image-compression",
+    "video-processing"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

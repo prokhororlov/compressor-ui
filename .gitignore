@@ -1,0 +1,27 @@
+node_modules/
+dist/
+output/
+*.log
+.DS_Store
+.env
+.env.local
+coverage/
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+.claude
+.serena
+
+# Backend
+backend/uploads/
+backend/node_modules/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Old webui (can be removed after migration)
+webui/

@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-terminal-border;
+  }
+
+  body {
+    @apply bg-terminal-bg text-terminal-text font-sans antialiased;
+  }
+
+  ::-webkit-scrollbar {
+    @apply w-2 h-2;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-terminal-bg;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-terminal-border hover:bg-terminal-neon-green transition-colors;
+  }
+}
+
+@layer components {
+  .terminal-border {
+    @apply border-2 border-terminal-neon-green;
+  }
+
+  .terminal-border-cyan {
+    @apply border-2 border-terminal-neon-cyan;
+  }
+
+  .btn-primary {
+    @apply px-6 py-3 font-mono font-bold text-terminal-bg bg-terminal-neon-green
+           hover:brightness-110 transition-all duration-200
+           border-2 border-terminal-neon-green
+           active:scale-95;
+  }
+
+  .btn-secondary {
+    @apply px-4 py-2 font-mono border-2 border-terminal-border
+           text-terminal-text hover:border-terminal-neon-green
+           hover:text-terminal-neon-green transition-all duration-200
+           active:scale-95;
+  }
+
+  .input-field {
+    @apply w-full px-4 py-3 bg-terminal-surface border-2 border-terminal-border
+           text-terminal-text font-mono placeholder-terminal-muted
+           focus:border-terminal-neon-green focus:outline-none
+           transition-colors duration-200;
+  }
+
+  .stat-card {
+    @apply bg-terminal-surface border-2 border-terminal-border p-6
+           hover:border-terminal-neon-green transition-all duration-300;
+  }
+
+  .neon-text {
+    @apply text-terminal-neon-green;
+  }
+}
+
+/* Terminal scan line effect */
+.terminal-scanline::before {
+  content: '';
+  @apply absolute top-0 left-0 w-full h-px bg-terminal-neon-green opacity-10;
+  animation: scan 8s linear infinite;
+  pointer-events: none;
+}
