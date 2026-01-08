@@ -6,6 +6,33 @@ import path from 'path'
 const execPromise = promisify(exec)
 
 /**
+ * Generate a unique output filename, using original name with new extension.
+ * Adds a counter suffix if file already exists.
+ * @param {string} dir - Directory path
+ * @param {string} baseName - Original filename without extension
+ * @param {string} format - Target format/extension
+ * @returns {Promise<string>} Unique filename
+ */
+async function getUniqueFilename(dir, baseName, format) {
+  let filename = `${baseName}.${format}`
+  let filePath = path.join(dir, filename)
+  let counter = 1
+
+  while (true) {
+    try {
+      await fs.access(filePath)
+      filename = `${baseName}_${counter}.${format}`
+      filePath = path.join(dir, filename)
+      counter++
+    } catch {
+      break
+    }
+  }
+
+  return filename
+}
+
+/**
  * Check if ImageMagick is installed
  * @returns {Promise<boolean>}
  */
@@ -46,13 +73,16 @@ export async function processWithImageMagick(files, options) {
       const processedFiles = []
 
       for (const format of formats) {
-        const outputFilename = path.basename(
-          file.filename,
-          path.extname(file.filename)
-        ) + '.' + format
+        // Get original filename without extension
+        const baseFilename = path.basename(
+          file.originalname,
+          path.extname(file.originalname)
+        )
+        const outputDir = path.dirname(file.path)
+        const outputFilename = await getUniqueFilename(outputDir, baseFilename, format)
 
         const outputPath = path.join(
-          path.dirname(file.path),
+          outputDir,
           outputFilename
         )
 

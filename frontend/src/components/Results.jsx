@@ -1,17 +1,74 @@
+import { useState, useEffect, useCallback } from 'react'
 import { getDownloadUrl, downloadArchive } from '../services/api'
+import { useToast } from './Toast'
 
-export default function Results({ results, processing, mode }) {
-  // Filter results based on mode
-  // Image results have processedFiles array, video results have filename
-  const filteredResults = results.filter(result => {
-    if (mode === 'images') {
-      // Image results have processedFiles array
-      return result.processedFiles !== undefined
-    } else {
-      // Video results have filename but no processedFiles
-      return result.processedFiles === undefined
+const RESULT_LIFETIME_MS = 10 * 60 * 1000 // 10 minutes
+
+export default function Results({ results, processing, onClear, mode }) {
+  const { showToast } = useToast()
+  const [timeRemaining, setTimeRemaining] = useState(null)
+
+  const storageKey = `media-toolkit-results-timestamp-${mode}`
+
+  // Initialize or get timestamp from localStorage
+  useEffect(() => {
+    if (results.length === 0) {
+      localStorage.removeItem(storageKey)
+      setTimeRemaining(null)
+      return
     }
-  })
+
+    let timestamp = localStorage.getItem(storageKey)
+
+    if (!timestamp) {
+      // New results - set timestamp
+      timestamp = Date.now().toString()
+      localStorage.setItem(storageKey, timestamp)
+    }
+
+    const updateTimer = () => {
+      const created = parseInt(timestamp, 10)
+      const elapsed = Date.now() - created
+      const remaining = RESULT_LIFETIME_MS - elapsed
+
+      if (remaining <= 0) {
+        setTimeRemaining(0)
+        localStorage.removeItem(storageKey)
+      } else {
+        setTimeRemaining(remaining)
+      }
+    }
+
+    updateTimer()
+    const interval = setInterval(updateTimer, 1000)
+
+    return () => clearInterval(interval)
+  }, [results.length, storageKey])
+
+  // Reset timestamp when new processing starts
+  useEffect(() => {
+    if (processing) {
+      localStorage.removeItem(storageKey)
+      setTimeRemaining(null)
+    }
+  }, [processing, storageKey])
+
+  const formatTimeRemaining = useCallback((ms) => {
+    if (ms === null || ms <= 0) return '00:00'
+    const totalSeconds = Math.floor(ms / 1000)
+    const minutes = Math.floor(totalSeconds / 60)
+    const seconds = totalSeconds % 60
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+  }, [])
+
+  const handleClear = useCallback(() => {
+    localStorage.removeItem(storageKey)
+    setTimeRemaining(null)
+    onClear()
+  }, [storageKey, onClear])
+
+  // Results are already mode-specific (passed from parent), no filtering needed
+  const filteredResults = results
   const formatFileSize = (bytes) => {
     if (bytes === 0) return '0 B'
     const k = 1024
@@ -20,10 +77,33 @@ export default function Results({ results, processing, mode }) {
     return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i]
   }
 
-  const handleDownload = (filename) => {
+  const handleDownload = async (filename) => {
     if (!filename) return
     const url = getDownloadUrl(filename)
-    window.open(url, '_blank')
+
+    try {
+      const response = await fetch(url)
+      if (!response.ok) {
+        if (response.status === 404) {
+          showToast('File storage time has expired', 'error')
+        } else {
+          showToast('Download failed', 'error')
+        }
+        return
+      }
+
+      const blob = await response.blob()
+      const downloadUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = downloadUrl
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(downloadUrl)
+    } catch (error) {
+      showToast('File storage time has expired', 'error')
+    }
   }
 
   const handleDownloadAll = async () => {
@@ -53,7 +133,7 @@ export default function Results({ results, processing, mode }) {
       URL.revokeObjectURL(url)
     } catch (error) {
       console.error('Download all error:', error)
-      alert(`Download failed: ${error.message}`)
+      showToast(`Download failed: ${error.message}`, 'error')
     }
   }
 
@@ -102,19 +182,44 @@ export default function Results({ results, processing, mode }) {
       {/* Results Table */}
       <div className="terminal-border bg-terminal-surface">
         <div className="p-2 sm:p-3 border-b-2 border-terminal-neon-green flex justify-between items-center">
-          <h3 className="font-mono text-sm sm:text-base font-bold neon-text">
-            {'>'} RESULTS
-          </h3>
+          <div className="flex items-center gap-2 sm:gap-4">
+            <h3 className="font-mono text-sm sm:text-base font-bold neon-text">
+              {'>'} RESULTS
+            </h3>
+            {timeRemaining !== null && timeRemaining > 0 && (
+              <div className={`font-mono text-xs sm:text-sm font-bold ${
+                timeRemaining < 60000 ? 'text-terminal-neon-red' : 'text-terminal-muted'
+              }`}>
+                [ TTL: {formatTimeRemaining(timeRemaining)} ]
+              </div>
+            )}
+            {timeRemaining === 0 && (
+              <div className="font-mono text-xs sm:text-sm font-bold text-terminal-neon-red">
+                [ EXPIRED ]
+              </div>
+            )}
+          </div>
           {!processing && filteredResults.length > 0 && (
-            <button
-              onClick={handleDownloadAll}
-              className="px-2 sm:px-3 py-1 sm:py-2 font-mono text-xs sm:text-sm font-bold border-2 border-terminal-neon-green
-                       bg-terminal-neon-green text-terminal-bg hover:bg-terminal-bg hover:text-terminal-neon-green
-                       transition-all"
-            >
-              <span className="hidden sm:inline">[ DOWNLOAD ALL ]</span>
-              <span className="sm:hidden">[ ALL ]</span>
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleDownloadAll}
+                className="px-2 sm:px-3 py-1 sm:py-2 font-mono text-xs sm:text-sm font-bold border-2 border-terminal-neon-green
+                         bg-terminal-neon-green text-terminal-bg hover:bg-terminal-bg hover:text-terminal-neon-green
+                         transition-all"
+              >
+                <span className="hidden sm:inline">[ DOWNLOAD ALL ]</span>
+                <span className="sm:hidden">[ ALL ]</span>
+              </button>
+              <button
+                onClick={handleClear}
+                className="px-2 sm:px-3 py-1 sm:py-2 font-mono text-xs sm:text-sm font-bold border-2 border-terminal-muted
+                         bg-transparent text-terminal-muted hover:border-terminal-neon-red hover:text-terminal-neon-red
+                         transition-all"
+              >
+                <span className="hidden sm:inline">[ CLEAR SESSION ]</span>
+                <span className="sm:hidden">[ CLEAR ]</span>
+              </button>
+            </div>
           )}
         </div>
 
@@ -136,9 +241,6 @@ export default function Results({ results, processing, mode }) {
                 </th>
                 <th className="text-center p-2 sm:p-3 font-mono text-xs font-bold text-terminal-muted hidden md:table-cell">
                   STATUS
-                </th>
-                <th className="text-center p-2 sm:p-3 font-mono text-xs font-bold text-terminal-muted">
-                  ACTION
                 </th>
               </tr>
             </thead>
@@ -172,17 +274,6 @@ export default function Results({ results, processing, mode }) {
                         }`}>
                           {result.status === 'success' ? '✓' : '✗'}
                         </span>
-                      </td>
-                      <td className="p-2 sm:p-3 text-center">
-                        <button
-                          onClick={() => handleDownload(pf.filename)}
-                          className="px-2 py-1 font-mono text-xs font-bold border border-terminal-neon-green
-                                   text-terminal-neon-green hover:bg-terminal-neon-green hover:text-terminal-bg
-                                   transition-all"
-                        >
-                          <span className="hidden sm:inline">DL</span>
-                          <span className="sm:hidden">↓</span>
-                        </button>
                       </td>
                     </tr>
                   ))
@@ -218,19 +309,6 @@ export default function Results({ results, processing, mode }) {
                         }`}>
                           {result.status === 'success' ? '✓' : '✗'}
                         </span>
-                      </td>
-                      <td className="p-2 sm:p-3 text-center">
-                        {result.filename && (
-                          <button
-                            onClick={() => handleDownload(result.filename)}
-                            className="px-2 py-1 font-mono text-xs font-bold border border-terminal-neon-green
-                                     text-terminal-neon-green hover:bg-terminal-neon-green hover:text-terminal-bg
-                                     transition-all"
-                          >
-                            <span className="hidden sm:inline">DL</span>
-                            <span className="sm:hidden">↓</span>
-                          </button>
-                        )}
                       </td>
                     </tr>
                   )

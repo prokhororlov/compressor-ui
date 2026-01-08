@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 
-export default function FileDropZone({ mode, onFilesAdded, disabled, files = [], onRemove, onFileOptions, fileOptions = {} }) {
+export default function FileDropZone({ mode, onFilesAdded, disabled, files = [], onRemove, onFileOptions, fileOptions = {}, maxFiles = 20, queueLimitMessage, onClearLimitMessage, imageSizeLimit, videoSizeLimit }) {
   const [isDragging, setIsDragging] = useState(false)
   const [previews, setPreviews] = useState({})
   const fileInputRef = useRef(null)
+
+  const isAtLimit = files.length >= maxFiles
 
   const acceptedTypes = {
     images: '.png,.jpg,.jpeg,.webp,.svg,.avif',
@@ -23,7 +25,7 @@ export default function FileDropZone({ mode, onFilesAdded, disabled, files = [],
 
   const handleDragOver = (e) => {
     e.preventDefault()
-    if (!disabled) {
+    if (!disabled && !isAtLimit) {
       setIsDragging(true)
     }
   }
@@ -36,7 +38,7 @@ export default function FileDropZone({ mode, onFilesAdded, disabled, files = [],
     e.preventDefault()
     setIsDragging(false)
 
-    if (disabled) return
+    if (disabled || isAtLimit) return
 
     const droppedFiles = Array.from(e.dataTransfer.files)
     onFilesAdded(droppedFiles)
@@ -50,7 +52,7 @@ export default function FileDropZone({ mode, onFilesAdded, disabled, files = [],
   }
 
   const handleClick = () => {
-    if (!disabled) {
+    if (!disabled && !isAtLimit) {
       fileInputRef.current?.click()
     }
   }
@@ -62,6 +64,10 @@ export default function FileDropZone({ mode, onFilesAdded, disabled, files = [],
     const i = Math.floor(Math.log(bytes) / Math.log(k))
     return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i]
   }
+
+  // Get the current size limit based on mode
+  const currentSizeLimit = mode === 'images' ? imageSizeLimit : videoSizeLimit
+  const sizeLimitLabel = mode === 'images' ? '100MB' : '500MB'
 
   // Generate preview URLs for image files
   // Use file object itself as key to avoid index issues when removing files
@@ -114,6 +120,21 @@ export default function FileDropZone({ mode, onFilesAdded, disabled, files = [],
 
   return (
     <div className="bg-terminal-surface border-2 border-terminal-border">
+      {/* Queue limit message */}
+      {queueLimitMessage && (
+        <div className="p-3 bg-terminal-neon-yellow bg-opacity-20 border-b-2 border-terminal-neon-yellow flex items-center justify-between">
+          <span className="font-mono text-xs text-terminal-neon-yellow font-bold">
+            {queueLimitMessage}
+          </span>
+          <button
+            onClick={onClearLimitMessage}
+            className="font-mono text-xs text-terminal-neon-yellow hover:text-terminal-text px-2"
+          >
+            [DISMISS]
+          </button>
+        </div>
+      )}
+
       {/* Drop zone header / compact zone when files exist */}
       <div
         onDragOver={handleDragOver}
@@ -163,11 +184,17 @@ export default function FileDropZone({ mode, onFilesAdded, disabled, files = [],
               <p className="font-mono text-xs text-terminal-muted mb-3">
                 or click to browse files
               </p>
-              <div className="inline-block px-3 py-1 border border-terminal-border font-mono text-xs text-terminal-muted">
+              <div className="inline-block px-3 py-1 border border-terminal-border font-mono text-xs text-terminal-muted mb-3">
                 {mode === 'images'
                   ? 'PNG, JPG, WebP, SVG, AVIF'
                   : 'MP4, WebM, MOV, MKV, AVI'
                 }
+              </div>
+              <div className="font-mono text-xs text-terminal-muted mb-1">
+                Max total size: <span className="text-terminal-neon-green font-bold">{sizeLimitLabel}</span>
+              </div>
+              <div className="font-mono text-xs text-terminal-muted">
+                {files.length}/{maxFiles} files in queue
               </div>
             </div>
           </div>
@@ -175,25 +202,32 @@ export default function FileDropZone({ mode, onFilesAdded, disabled, files = [],
           // Compact header when files exist
           <div className="p-3 flex items-center justify-between">
             <h3 className="font-mono text-sm font-bold text-terminal-text">
-              {'>'} {mode === 'images' ? 'IMAGE' : 'VIDEO'} QUEUE ({displayFiles.length}) - {isDragging ? 'DROP TO ADD MORE' : 'Drag files or'}{' '}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleClick()
-                }}
-                className={mode === 'images' ? 'text-terminal-neon-green hover:underline' : 'text-terminal-neon-green hover:underline'}
-                disabled={disabled}
-              >
-                click to add
-              </button>
+              {'>'} {mode === 'images' ? 'IMAGE' : 'VIDEO'} QUEUE ({files.length}/{maxFiles}) - {
+                isAtLimit
+                  ? <span className="text-terminal-neon-yellow">QUEUE FULL</span>
+                  : isDragging
+                    ? 'DROP TO ADD MORE'
+                    : <>Drag files or{' '}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleClick()
+                          }}
+                          className="text-terminal-neon-green hover:underline"
+                          disabled={disabled || isAtLimit}
+                        >
+                          click to add
+                        </button>
+                      </>
+              }
             </h3>
             {!disabled && (
               <div className={`font-mono text-xs px-2 py-1 font-bold ${
-                mode === 'images'
-                  ? 'bg-terminal-neon-green text-terminal-bg'
+                isAtLimit
+                  ? 'bg-terminal-neon-yellow text-terminal-bg'
                   : 'bg-terminal-neon-green text-terminal-bg'
               }`}>
-                READY
+                {isAtLimit ? 'FULL' : 'READY'}
               </div>
             )}
           </div>

@@ -3,6 +3,33 @@ import path from 'path'
 import fs from 'fs/promises'
 
 /**
+ * Generate a unique output filename, using original name with new extension.
+ * Adds a counter suffix if file already exists.
+ * @param {string} dir - Directory path
+ * @param {string} baseName - Original filename without extension
+ * @param {string} format - Target format/extension
+ * @returns {Promise<string>} Unique filename
+ */
+async function getUniqueFilename(dir, baseName, format) {
+  let filename = `${baseName}.${format}`
+  let filePath = path.join(dir, filename)
+  let counter = 1
+
+  while (true) {
+    try {
+      await fs.access(filePath)
+      filename = `${baseName}_${counter}.${format}`
+      filePath = path.join(dir, filename)
+      counter++
+    } catch {
+      break
+    }
+  }
+
+  return filename
+}
+
+/**
  * Process video with specified options
  * @param {Object} file - Uploaded file
  * @param {Object} options - Processing options
@@ -30,11 +57,10 @@ export async function processVideo(file, options) {
         file.originalname,
         path.extname(file.originalname)
       )
-      
-      const outputFilename = baseFilename + '.' + format
 
       // Use the uploads directory directly to avoid path issues
       const uploadsDir = path.dirname(file.path)
+      const outputFilename = await getUniqueFilename(uploadsDir, baseFilename, format)
       const outputPath = path.join(uploadsDir, outputFilename)
 
       // Use absolute paths resolved properly for Windows

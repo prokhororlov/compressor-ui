@@ -4,6 +4,36 @@ import fs from 'fs/promises'
 import { optimizeSVGs } from './svgProcessor.js'
 
 /**
+ * Generate a unique output filename, using original name with new extension.
+ * Adds a counter suffix if file already exists.
+ * @param {string} dir - Directory path
+ * @param {string} baseName - Original filename without extension
+ * @param {string} format - Target format/extension
+ * @returns {Promise<string>} Unique filename
+ */
+async function getUniqueFilename(dir, baseName, format) {
+  let filename = `${baseName}.${format}`
+  let filePath = path.join(dir, filename)
+  let counter = 1
+
+  // Check if file exists and add counter if needed
+  while (true) {
+    try {
+      await fs.access(filePath)
+      // File exists, try with counter
+      filename = `${baseName}_${counter}.${format}`
+      filePath = path.join(dir, filename)
+      counter++
+    } catch {
+      // File doesn't exist, we can use this name
+      break
+    }
+  }
+
+  return filename
+}
+
+/**
  * Process images with specified options
  * @param {Array} files - Array of uploaded files
  * @param {Object} options - Processing options
@@ -42,13 +72,8 @@ export async function processImages(files, options) {
 
   // Process SVG files
   if (svgFiles.length > 0) {
-    // Optimize SVGs if 'svg' format is requested
-    if (hasSvgFormat) {
-      const svgResults = await optimizeSVGs(svgFiles, options)
-      results.push(...svgResults)
-    }
-
-    // Convert SVGs to raster formats if requested
+    // IMPORTANT: Convert SVGs to raster formats FIRST (before SVG optimization)
+    // because optimizeSVGs deletes the original file, which we need for raster conversion
     if (hasRasterFormats) {
       for (const file of svgFiles) {
         try {
@@ -65,10 +90,12 @@ export async function processImages(files, options) {
           )
 
           for (const format of rasterFormats) {
-            const outputFilename = baseFilename + '.' + format
+            // Generate unique filename using original name with new extension
+            const outputDir = path.dirname(file.path)
+            const outputFilename = await getUniqueFilename(outputDir, baseFilename, format)
 
             const outputPath = path.join(
-              path.dirname(file.path),
+              outputDir,
               outputFilename
             )
 
@@ -132,7 +159,7 @@ export async function processImages(files, options) {
             })
           }
 
-          // Don't clean up original SVG file yet if we also optimized it
+          // Don't clean up original SVG file yet if we also need to optimize it
           if (!hasSvgFormat) {
             await fs.unlink(file.path)
           }
@@ -156,6 +183,12 @@ export async function processImages(files, options) {
           })
         }
       }
+    }
+
+    // Optimize SVGs if 'svg' format is requested (do this AFTER raster conversion)
+    if (hasSvgFormat) {
+      const svgResults = await optimizeSVGs(svgFiles, options)
+      results.push(...svgResults)
     }
   }
 
@@ -195,10 +228,12 @@ export async function processImages(files, options) {
 
       // Process for each requested format
       for (const format of rasterFormats) {
-        const outputFilename = baseFilename + '.' + format
+        // Generate unique filename using original name with new extension
+        const outputDir = path.dirname(file.path)
+        const outputFilename = await getUniqueFilename(outputDir, baseFilename, format)
 
         const outputPath = path.join(
-          path.dirname(file.path),
+          outputDir,
           outputFilename
         )
 

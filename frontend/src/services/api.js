@@ -59,7 +59,7 @@ export async function processVideo(file, options) {
  * @returns {string} Download URL
  */
 export function getDownloadUrl(filename) {
-  return `${API_BASE_URL}/process/download/${filename}`
+  return `${API_BASE_URL}/process/download/${encodeURIComponent(filename)}`
 }
 
 /**

@@ -1,16 +1,45 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Header from './components/Header'
 import FileDropZone from './components/FileDropZone'
 import ProcessingOptions from './components/ProcessingOptions'
 import Results from './components/Results'
 import FileConversionOptions from './components/FileConversionOptions'
+import { ToastProvider, useToast } from './components/Toast'
 import { processImages, processVideo } from './services/api'
 
+const MAX_QUEUE_SIZE = 20
+
+// File size limits (in bytes)
+const IMAGE_SIZE_LIMIT = 100 * 1024 * 1024 // 100MB total for images
+const VIDEO_SIZE_LIMIT = 500 * 1024 * 1024 // 500MB for videos
+
+// Helper function to check if a file is an image
+const isImageFile = (file) => {
+  const ext = file.name.split('.').pop().toLowerCase()
+  return ['jpg', 'jpeg', 'png', 'webp', 'avif', 'gif', 'bmp', 'tiff', 'svg'].includes(ext)
+}
+
+// Helper function to check if a file is a video
+const isVideoFile = (file) => {
+  const ext = file.name.split('.').pop().toLowerCase()
+  return ['mp4', 'webm', 'mov', 'mkv', 'avi', 'flv', 'wmv', 'm4v'].includes(ext)
+}
+
 function App() {
+  const { showToast } = useToast()
   const [mode, setMode] = useState('images') // 'images' or 'video'
-  const [files, setFiles] = useState([])
+  // Separate file queues per mode
+  const [files, setFiles] = useState({
+    images: [],
+    video: []
+  })
   const [processing, setProcessing] = useState(false)
-  const [results, setResults] = useState([])
+  // Separate results per mode
+  const [results, setResults] = useState({
+    images: [],
+    video: []
+  })
+  const [queueLimitMessage, setQueueLimitMessage] = useState(null)
   const [options, setOptions] = useState({
     images: {
       quality: 80,
@@ -30,53 +59,208 @@ function App() {
       audio: true
     }
   })
-  // Per-file options (overrides global options if set)
-  const [fileOptions, setFileOptions] = useState({})
+  // Per-file options (overrides global options if set) - separate per mode
+  const [fileOptions, setFileOptions] = useState({
+    images: {},
+    video: {}
+  })
   // File options modal state
   const [showFileOptionsModal, setShowFileOptionsModal] = useState(false)
   const [selectedFileIndex, setSelectedFileIndex] = useState(null)
+  // Track if initial load from localStorage is complete
+  const [isInitialized, setIsInitialized] = useState(false)
+
+  const STORAGE_KEY = 'media-toolkit-session'
+
+  // Load state from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (parsed.mode) setMode(parsed.mode)
+        if (parsed.options) setOptions(parsed.options)
+        // Handle new per-mode results format (migrate from old format if needed)
+        if (parsed.results) {
+          if (Array.isArray(parsed.results)) {
+            // Old format - migrate to new format
+            setResults({ images: parsed.results, video: [] })
+          } else {
+            setResults(parsed.results)
+          }
+        }
+        // Handle new per-mode fileOptions format (migrate from old format if needed)
+        if (parsed.fileOptions) {
+          if (!parsed.fileOptions.images && !parsed.fileOptions.video) {
+            // Old format - migrate to new format
+            setFileOptions({ images: parsed.fileOptions, video: {} })
+          } else {
+            setFileOptions(parsed.fileOptions)
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load session from localStorage:', error)
+    }
+    setIsInitialized(true)
+  }, [])
+
+  // Save state to localStorage when it changes
+  useEffect(() => {
+    if (!isInitialized) return // Don't save during initial load
+
+    try {
+      const session = {
+        mode,
+        options,
+        results,
+        fileOptions
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(session))
+    } catch (error) {
+      console.error('Failed to save session to localStorage:', error)
+    }
+  }, [mode, options, results, fileOptions, isInitialized])
 
   const handleFilesAdded = (newFiles) => {
+    // Clear any previous limit message
+    setQueueLimitMessage(null)
+
+    if (newFiles.length === 0) {
+      return
+    }
+
+    // Filter files based on current mode
+    const isValidFile = mode === 'images' ? isImageFile : isVideoFile
+    const sizeLimit = mode === 'images' ? IMAGE_SIZE_LIMIT : VIDEO_SIZE_LIMIT
+    const limitLabel = mode === 'images' ? '100MB' : '500MB'
+    const fileTypeLabel = mode === 'images' ? 'image' : 'video'
+
+    // Filter only files matching the current mode
+    const modeFiles = newFiles.filter(isValidFile)
+    const wrongTypeCount = newFiles.length - modeFiles.length
+
+    if (modeFiles.length === 0) {
+      if (wrongTypeCount > 0) {
+        setQueueLimitMessage(`No valid ${fileTypeLabel} files found. Please add ${fileTypeLabel} files.`)
+      }
+      return
+    }
+
     setFiles(prev => {
+      const currentQueue = prev[mode]
+
       // Create a Set of existing file identifiers (name + size + lastModified)
       const existingFiles = new Set(
-        prev.map(f => `${f.name}-${f.size}-${f.lastModified}`)
+        currentQueue.map(f => `${f.name}-${f.size}-${f.lastModified}`)
       )
 
-      // Filter out duplicates from newFiles
-      const uniqueNewFiles = newFiles.filter(file => {
+      // Filter out duplicates from modeFiles
+      const uniqueNewFiles = modeFiles.filter(file => {
         const fileId = `${file.name}-${file.size}-${file.lastModified}`
         return !existingFiles.has(fileId)
       })
 
-      return [...prev, ...uniqueNewFiles]
+      if (uniqueNewFiles.length === 0) {
+        return prev
+      }
+
+      // Calculate how many files can be added (queue limit)
+      const remainingSlots = MAX_QUEUE_SIZE - currentQueue.length
+
+      if (remainingSlots <= 0) {
+        setQueueLimitMessage(`Queue is full. Maximum ${MAX_QUEUE_SIZE} files allowed.`)
+        return prev
+      }
+
+      // Apply queue limit
+      let filesToAdd = uniqueNewFiles.slice(0, remainingSlots)
+      const queueRejected = uniqueNewFiles.length - filesToAdd.length
+
+      // Calculate current total size
+      const currentSize = currentQueue.reduce((sum, f) => sum + f.size, 0)
+      const newTotal = filesToAdd.reduce((sum, f) => sum + f.size, 0)
+
+      const messages = []
+
+      // Check size limit
+      let acceptedFiles = []
+      if (currentSize + newTotal > sizeLimit) {
+        // Try to add as many files as possible
+        let remainingBudget = sizeLimit - currentSize
+        for (const file of filesToAdd) {
+          if (file.size <= remainingBudget) {
+            acceptedFiles.push(file)
+            remainingBudget -= file.size
+          }
+        }
+        const rejectedCount = filesToAdd.length - acceptedFiles.length
+        if (rejectedCount > 0) {
+          messages.push(`${rejectedCount} file(s) rejected - total ${fileTypeLabel} size limit is ${limitLabel}`)
+        }
+      } else {
+        acceptedFiles = filesToAdd
+      }
+
+      // Add queue limit message if applicable
+      if (queueRejected > 0) {
+        messages.push(`${queueRejected} file(s) rejected - queue limit is ${MAX_QUEUE_SIZE} files`)
+      }
+
+      // Add wrong type message if applicable
+      if (wrongTypeCount > 0) {
+        messages.push(`${wrongTypeCount} non-${fileTypeLabel} file(s) ignored`)
+      }
+
+      // Set combined message
+      if (messages.length > 0) {
+        setQueueLimitMessage(messages.join('. '))
+      }
+
+      if (acceptedFiles.length === 0) {
+        return prev
+      }
+
+      return {
+        ...prev,
+        [mode]: [...currentQueue, ...acceptedFiles]
+      }
     })
   }
 
   const handleRemoveFile = (index) => {
-    setFiles(prev => prev.filter((_, i) => i !== index))
-    // Also remove file-specific options
+    setFiles(prev => ({
+      ...prev,
+      [mode]: prev[mode].filter((_, i) => i !== index)
+    }))
+    // Also remove file-specific options for current mode
     setFileOptions(prev => {
-      const newOptions = { ...prev }
-      delete newOptions[index]
+      const modeOptions = { ...prev[mode] }
+      delete modeOptions[index]
       // Reindex remaining options
       const reindexed = {}
-      Object.keys(newOptions).forEach(key => {
+      Object.keys(modeOptions).forEach(key => {
         const oldIndex = parseInt(key)
         if (oldIndex > index) {
-          reindexed[oldIndex - 1] = newOptions[key]
+          reindexed[oldIndex - 1] = modeOptions[key]
         } else {
-          reindexed[key] = newOptions[key]
+          reindexed[key] = modeOptions[key]
         }
       })
-      return reindexed
+      return {
+        ...prev,
+        [mode]: reindexed
+      }
     })
   }
 
   const handleFileOptionsChange = (fileIndex, newOptions) => {
     setFileOptions(prev => ({
       ...prev,
-      [fileIndex]: newOptions
+      [mode]: {
+        ...prev[mode],
+        [fileIndex]: newOptions
+      }
     }))
   }
 
@@ -90,76 +274,70 @@ function App() {
     setSelectedFileIndex(null)
   }
 
+  // Get current mode's files
+  const currentFiles = files[mode]
+  const currentFileOptions = fileOptions[mode]
+  const currentResults = results[mode]
+
   const handleProcessClick = () => {
-    if (files.length === 0) return
+    if (currentFiles.length === 0) return
     handleProcess()
   }
 
   const handleProcess = async () => {
-    if (files.length === 0) return
+    if (currentFiles.length === 0) return
 
     setProcessing(true)
-    setResults([])
+    // Clear only current mode's results
+    setResults(prev => ({
+      ...prev,
+      [mode]: []
+    }))
 
     try {
-      // Helper function to check if a file is an image
-      const isImageFile = (file) => {
-        const ext = file.name.split('.').pop().toLowerCase()
-        return ['jpg', 'jpeg', 'png', 'webp', 'avif', 'gif', 'bmp', 'tiff', 'svg'].includes(ext)
-      }
-
-      // Helper function to check if a file is a video
-      const isVideoFile = (file) => {
-        const ext = file.name.split('.').pop().toLowerCase()
-        return ['mp4', 'webm', 'mov', 'mkv', 'avi', 'flv', 'wmv', 'm4v'].includes(ext)
-      }
-
       if (mode === 'images') {
-        // Filter only image files
-        const imageFiles = files.filter((file, index) => isImageFile(file))
-        
+        // All files in images queue are already image files
+        const imageFiles = currentFiles
+
         if (imageFiles.length === 0) {
-          alert('No image files in the queue. Please add image files or switch to video mode.')
+          showToast('No image files in the queue. Please add image files.', 'warning')
           setProcessing(false)
           return
         }
 
         // Check if any files have custom options
-        const hasCustomOptions = Object.keys(fileOptions).length > 0
+        const hasCustomOptions = Object.keys(currentFileOptions).length > 0
 
         if (hasCustomOptions) {
           // Process images individually with their specific options
           const processedResults = []
 
-          for (let i = 0; i < files.length; i++) {
-            const file = files[i]
-
-            // Skip non-image files
-            if (!isImageFile(file)) continue
+          for (let i = 0; i < currentFiles.length; i++) {
+            const file = currentFiles[i]
 
             // Build file-specific options
             let fileSpecificOptions
-            if (fileOptions[i]) {
+            if (currentFileOptions[i]) {
               const isSvg = file.name.toLowerCase().endsWith('.svg')
 
-              if (isSvg && fileOptions[i].svgMode === 'optimize') {
+              if (isSvg && currentFileOptions[i].svgMode === 'optimize') {
                 // SVG optimization mode - use SVG options only
                 fileSpecificOptions = {
                   ...options.svg,
-                  ...fileOptions[i],
+                  ...currentFileOptions[i],
                   formats: ['svg'] // Force SVG output
                 }
-              } else if (isSvg && fileOptions[i].svgMode === 'convert') {
+              } else if (isSvg && currentFileOptions[i].svgMode === 'convert') {
                 // SVG to raster conversion - use raster options
                 fileSpecificOptions = {
                   ...options.images,
-                  ...fileOptions[i]
+                  ...currentFileOptions[i]
                 }
               } else {
                 // Regular raster image
                 fileSpecificOptions = {
                   ...options.images,
-                  ...fileOptions[i]
+                  ...currentFileOptions[i]
                 }
               }
             } else {
@@ -198,7 +376,10 @@ function App() {
                 error: error.message
               })
             }
-            setResults([...processedResults])
+            setResults(prev => ({
+              ...prev,
+              images: [...processedResults]
+            }))
           }
         } else {
           // Process all images with same options (batch)
@@ -247,14 +428,17 @@ function App() {
             }
           }
 
-          setResults(processedResults)
+          setResults(prev => ({
+            ...prev,
+            images: processedResults
+          }))
         }
       } else {
-        // Filter only video files
-        const videoFiles = files.filter((file, index) => isVideoFile(file))
-        
+        // All files in video queue are already video files
+        const videoFiles = currentFiles
+
         if (videoFiles.length === 0) {
-          alert('No video files in the queue. Please add video files or switch to images mode.')
+          showToast('No video files in the queue. Please add video files.', 'warning')
           setProcessing(false)
           return
         }
@@ -262,13 +446,10 @@ function App() {
         // Process videos one by one with their specific options
         const processedResults = []
 
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i]
-          
-          // Skip non-video files
-          if (!isVideoFile(file)) continue
-          
-          const fileSpecificOptions = fileOptions[i] || options.video
+        for (let i = 0; i < currentFiles.length; i++) {
+          const file = currentFiles[i]
+
+          const fileSpecificOptions = currentFileOptions[i] || options.video
 
           try {
             const response = await processVideo(file, fileSpecificOptions)
@@ -290,21 +471,36 @@ function App() {
               error: error.message
             })
           }
-          setResults([...processedResults])
+          setResults(prev => ({
+            ...prev,
+            video: [...processedResults]
+          }))
         }
       }
     } catch (error) {
       console.error('Processing error:', error)
-      alert(`Processing failed: ${error.message}`)
+      showToast(`Processing failed: ${error.message}`, 'error')
     } finally {
       setProcessing(false)
     }
   }
 
   const handleClear = () => {
-    setFiles([])
-    setResults([])
-    setFileOptions({})
+    // Clear only current mode's files, results, and fileOptions
+    setFiles(prev => ({
+      ...prev,
+      [mode]: []
+    }))
+    setResults(prev => ({
+      ...prev,
+      [mode]: []
+    }))
+    setFileOptions(prev => ({
+      ...prev,
+      [mode]: {}
+    }))
+    // Clear results timestamp for current mode
+    localStorage.removeItem(`media-toolkit-results-timestamp-${mode}`)
   }
 
   return (
@@ -315,10 +511,10 @@ function App() {
       {/* File Options Modal */}
       {showFileOptionsModal && selectedFileIndex !== null && (
         <FileConversionOptions
-          file={files[selectedFileIndex]}
+          file={currentFiles[selectedFileIndex]}
           fileIndex={selectedFileIndex}
           mode={mode}
-          globalOptions={fileOptions[selectedFileIndex] || options[mode]}
+          globalOptions={currentFileOptions[selectedFileIndex] || options[mode]}
           onSave={handleFileOptionsChange}
           onClose={handleCloseFileOptions}
         />
@@ -359,11 +555,16 @@ function App() {
           <FileDropZone
             mode={mode}
             onFilesAdded={handleFilesAdded}
-            files={files}
+            files={currentFiles}
             onRemove={handleRemoveFile}
             onFileOptions={handleOpenFileOptions}
-            fileOptions={fileOptions}
+            fileOptions={currentFileOptions}
             disabled={processing}
+            maxFiles={MAX_QUEUE_SIZE}
+            queueLimitMessage={queueLimitMessage}
+            onClearLimitMessage={() => setQueueLimitMessage(null)}
+            imageSizeLimit={IMAGE_SIZE_LIMIT}
+            videoSizeLimit={VIDEO_SIZE_LIMIT}
           />
 
           {/* Processing Options */}
@@ -380,11 +581,11 @@ function App() {
               svg: newSvgOptions
             }))}
             disabled={processing}
-            files={files}
+            files={currentFiles}
           />
 
           {/* Action Buttons */}
-          {files.length > 0 && (
+          {currentFiles.length > 0 && (
             <div className="flex gap-2 sm:gap-4">
               <button
                 onClick={handleProcessClick}
@@ -404,8 +605,8 @@ function App() {
           )}
 
           {/* Results */}
-          {results.length > 0 && (
-            <Results results={results} processing={processing} mode={mode} />
+          {currentResults.length > 0 && (
+            <Results results={currentResults} processing={processing} onClear={handleClear} mode={mode} />
           )}
         </main>
 
@@ -425,4 +626,12 @@ function App() {
   )
 }
 
-export default App
+function AppWithToast() {
+  return (
+    <ToastProvider>
+      <App />
+    </ToastProvider>
+  )
+}
+
+export default AppWithToast

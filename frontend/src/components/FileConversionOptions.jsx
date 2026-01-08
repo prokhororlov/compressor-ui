@@ -19,26 +19,57 @@ export default function FileConversionOptions({ file, fileIndex, mode, globalOpt
 
   // Load image/video dimensions to calculate aspect ratio
   useEffect(() => {
+    let objectUrl = null
+    let cleanup = () => {}
+
     if (file.type.startsWith('image/')) {
       const img = new Image()
-      const objectUrl = URL.createObjectURL(file)
+      objectUrl = URL.createObjectURL(file)
       img.onload = () => {
         setAspectRatio(img.width / img.height)
         setOriginalDimensions({ width: img.width, height: img.height })
-        URL.revokeObjectURL(objectUrl)
       }
       img.src = objectUrl
+      cleanup = () => {
+        img.onload = null
+      }
     } else if (file.type.startsWith('video/')) {
       const video = document.createElement('video')
-      const objectUrl = URL.createObjectURL(file)
-      video.onloadedmetadata = () => {
-        setAspectRatio(video.videoWidth / video.videoHeight)
-        setOriginalDimensions({ width: Math.round(video.videoWidth), height: Math.round(video.videoHeight) })
+      objectUrl = URL.createObjectURL(file)
+
+      const handleMetadata = () => {
+        if (video.videoWidth && video.videoHeight) {
+          setAspectRatio(video.videoWidth / video.videoHeight)
+          setOriginalDimensions({ width: Math.round(video.videoWidth), height: Math.round(video.videoHeight) })
+        }
+      }
+
+      video.onloadedmetadata = handleMetadata
+      // Also listen to loadeddata as a fallback - some browsers fire this more reliably
+      video.onloadeddata = handleMetadata
+      // Handle errors gracefully
+      video.onerror = () => {
+        console.warn('Could not load video metadata')
+      }
+
+      video.preload = 'metadata'
+      video.muted = true // Muted videos load more reliably in some browsers
+      video.playsInline = true
+      video.src = objectUrl
+
+      cleanup = () => {
+        video.onloadedmetadata = null
+        video.onloadeddata = null
+        video.onerror = null
+        video.src = ''
+      }
+    }
+
+    return () => {
+      cleanup()
+      if (objectUrl) {
         URL.revokeObjectURL(objectUrl)
       }
-      video.preload = 'metadata'
-      video.src = objectUrl
-      video.load()
     }
   }, [file])
 
@@ -76,20 +107,42 @@ export default function FileConversionOptions({ file, fileIndex, mode, globalOpt
   }, [originalDimensions.width, originalDimensions.height, localOptions.resizeMode])
 
   // Handle width change with aspect ratio preservation
+  // For images, cap width to original dimensions; videos can have any size
   const handleWidthChange = (newWidth) => {
+    const isImage = mode === 'images'
+    const maxWidth = isImage && originalDimensions.width ? originalDimensions.width : Infinity
+    const maxHeight = isImage && originalDimensions.height ? originalDimensions.height : Infinity
+
     if (aspectRatio && newWidth !== '') {
-      const calculatedHeight = Math.round(parseInt(newWidth) / aspectRatio)
-      setLocalOptions({ ...localOptions, width: parseInt(newWidth), height: calculatedHeight })
+      let width = Math.min(parseInt(newWidth), maxWidth)
+      let calculatedHeight = Math.round(width / aspectRatio)
+      // If calculated height exceeds max, recalculate width from max height
+      if (calculatedHeight > maxHeight) {
+        calculatedHeight = maxHeight
+        width = Math.round(calculatedHeight * aspectRatio)
+      }
+      setLocalOptions({ ...localOptions, width, height: calculatedHeight })
     } else {
       setLocalOptions({ ...localOptions, width: newWidth === '' ? '' : parseInt(newWidth) })
     }
   }
 
   // Handle height change with aspect ratio preservation
+  // For images, cap height to original dimensions; videos can have any size
   const handleHeightChange = (newHeight) => {
+    const isImage = mode === 'images'
+    const maxWidth = isImage && originalDimensions.width ? originalDimensions.width : Infinity
+    const maxHeight = isImage && originalDimensions.height ? originalDimensions.height : Infinity
+
     if (aspectRatio && newHeight !== '') {
-      const calculatedWidth = Math.round(parseInt(newHeight) * aspectRatio)
-      setLocalOptions({ ...localOptions, height: parseInt(newHeight), width: calculatedWidth })
+      let height = Math.min(parseInt(newHeight), maxHeight)
+      let calculatedWidth = Math.round(height * aspectRatio)
+      // If calculated width exceeds max, recalculate height from max width
+      if (calculatedWidth > maxWidth) {
+        calculatedWidth = maxWidth
+        height = Math.round(calculatedWidth / aspectRatio)
+      }
+      setLocalOptions({ ...localOptions, height, width: calculatedWidth })
     } else {
       setLocalOptions({ ...localOptions, height: newHeight === '' ? '' : parseInt(newHeight) })
     }
@@ -390,6 +443,22 @@ export default function FileConversionOptions({ file, fileIndex, mode, globalOpt
                                 handleWidthChange(val)
                               }
                             }}
+                            onBlur={(e) => {
+                              const maxWidth = originalDimensions.width || Infinity
+                              const val = e.target.value === '' ? (originalDimensions.width || 100) : parseInt(e.target.value)
+                              const clamped = Math.max(1, Math.min(maxWidth, val))
+                              // Recalculate height if aspect ratio is preserved
+                              if (aspectRatio) {
+                                let height = Math.round(clamped / aspectRatio)
+                                const maxHeight = originalDimensions.height || Infinity
+                                if (height > maxHeight) {
+                                  height = maxHeight
+                                }
+                                setLocalOptions({ ...localOptions, width: clamped, height })
+                              } else {
+                                setLocalOptions({ ...localOptions, width: clamped })
+                              }
+                            }}
                             placeholder="px"
                             className="w-full px-2 py-2 bg-terminal-bg border-2 border-terminal-border text-terminal-text font-mono font-bold text-center focus:border-terminal-neon-green focus:outline-none"
                           />
@@ -407,6 +476,22 @@ export default function FileConversionOptions({ file, fileIndex, mode, globalOpt
                               const val = e.target.value
                               if (val === '' || /^\d+$/.test(val)) {
                                 handleHeightChange(val)
+                              }
+                            }}
+                            onBlur={(e) => {
+                              const maxHeight = originalDimensions.height || Infinity
+                              const val = e.target.value === '' ? (originalDimensions.height || 100) : parseInt(e.target.value)
+                              const clamped = Math.max(1, Math.min(maxHeight, val))
+                              // Recalculate width if aspect ratio is preserved
+                              if (aspectRatio) {
+                                let width = Math.round(clamped * aspectRatio)
+                                const maxWidth = originalDimensions.width || Infinity
+                                if (width > maxWidth) {
+                                  width = maxWidth
+                                }
+                                setLocalOptions({ ...localOptions, height: clamped, width })
+                              } else {
+                                setLocalOptions({ ...localOptions, height: clamped })
                               }
                             }}
                             placeholder="px"
