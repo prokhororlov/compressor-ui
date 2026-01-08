@@ -14,6 +14,11 @@ const app = express()
 const PORT = process.env.PORT || 3210
 const isProduction = process.env.NODE_ENV === 'production'
 
+// Trust proxy in production (required for rate limiting behind reverse proxy)
+if (isProduction) {
+  app.set('trust proxy', 1)
+}
+
 // CORS configuration - restrictive for production
 const corsOptions = {
   origin: isProduction
