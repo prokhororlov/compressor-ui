@@ -61,7 +61,7 @@ npm run dev
 
 # Or run separately in different terminals:
 npm run dev:frontend  # Frontend at http://localhost:5173
-npm run dev:backend   # Backend at http://localhost:3001
+npm run dev:backend   # Backend at http://localhost:3210
 ```
 
 ### Production Mode
@@ -74,12 +74,12 @@ npm run build
 npm start
 ```
 
-The application will be available at `http://localhost:3001`
+The application will be available at `http://localhost:3210`
 
 ## Usage
 
 1. **Open the Web Interface**
-   - Navigate to `http://localhost:3001` (production) or `http://localhost:5173` (development)
+   - Navigate to `http://localhost:3210` (production) or `http://localhost:5173` (development)
 
 2. **Select Processing Mode**
    - Choose between Image Processing or Video Processing
@@ -250,7 +250,7 @@ ffmpeg -version
 
 ### Port Already in Use
 - Frontend default: 5173 (Vite auto-increments if taken)
-- Backend default: 3001 (change in `backend/app/index.js`)
+- Backend default: 3210 (change in `backend/app/index.js`)
 
 ### Large File Uploads
 - Default limit: 500MB per file

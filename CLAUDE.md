@@ -18,7 +18,7 @@ npm run setup          # install:all + build frontend
 ```bash
 npm run dev            # Build frontend and start backend (production mode)
 npm run dev:frontend   # Start Vite dev server at http://localhost:5173
-npm run dev:backend    # Start backend at http://localhost:3001
+npm run dev:backend    # Start backend at http://localhost:3210
 ```
 
 When developing, run `dev:frontend` and `dev:backend` in separate terminals for hot module reloading.
@@ -151,13 +151,13 @@ Processing services follow a common pattern:
 ### Environment Configuration
 
 **Backend** (`.env`):
-- `PORT` - Server port (default: 3001)
+- `PORT` - Server port (default: 3210)
 - `NODE_ENV` - Environment (development/production)
 - `ALLOWED_ORIGINS` - Comma-separated CORS origins (production only, empty = same-origin only)
 - `DISABLE_IMAGEMAGICK` - Set to 'true' to disable ImageMagick processor
 
 **Frontend** (`.env`):
-- `VITE_API_URL` - Backend API base URL (default: http://localhost:3001/api)
+- `VITE_API_URL` - Backend API base URL (default: http://localhost:3210/api)
 
 In production mode, frontend is served from backend, so API calls use relative paths.
 
@@ -211,6 +211,6 @@ In production mode, frontend is served from backend, so API calls use relative p
 3. Set `NODE_ENV=production` in backend environment
 4. Configure `ALLOWED_ORIGINS` if cross-origin requests needed
 5. Ensure FFmpeg is installed on production system
-6. Configure `PORT` for backend if needed (default: 3001)
+6. Configure `PORT` for backend if needed (default: 3210)
 7. Use HTTPS (required for HSTS)
 8. Consider reverse proxy (nginx) for additional security
