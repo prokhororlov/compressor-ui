@@ -87,6 +87,9 @@ jobs:
       - name: Install dependencies
         run: npm run install:all
 
+      - name: Clean previous build artifacts
+        run: rm -rf dist-electron .electron-backend-deps
+
       - name: Build Electron (macOS)
         run: npm run electron:build:mac
 

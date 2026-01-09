@@ -35,14 +35,10 @@ const config = {
       from: '.electron-backend-deps/node_modules',
       to: 'backend/node_modules'
     },
-    // Icons for window icon in production
+    // Icons for window icon in production (only ico and png, icns is handled by mac.icon)
     {
       from: 'electron/icons/icon.ico',
       to: 'icon.ico'
-    },
-    {
-      from: 'electron/icons/icon.icns',
-      to: 'icon.icns'
     },
     {
       from: 'electron/icons/icon.png',
