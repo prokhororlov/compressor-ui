@@ -643,12 +643,11 @@ function App() {
                   {processing ? '[ PROCESSING... ]' : '[ PROCESS FILES ]'}
                 </button>
               )}
-              {/* Show Clear button only when there are no results (otherwise Clear Session is in Results) */}
-              {currentResults.length === 0 && (
+              {/* Show Clear button only when there are no results and not processing */}
+              {currentResults.length === 0 && !processing && (
                 <button
                   onClick={handleClear}
-                  disabled={processing}
-                  className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
+                  className="btn-secondary text-sm sm:text-base"
                 >
                   [ CLEAR ]
                 </button>
