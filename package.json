@@ -22,7 +22,11 @@
     "electron:build:mac": "npm run electron:build-frontend && npm run electron:prepare-deps && electron-builder --mac",
     "electron:build:linux": "npm run electron:build-frontend && npm run electron:prepare-deps && electron-builder --linux",
     "electron:build:all": "npm run electron:build-frontend && npm run electron:prepare-deps && electron-builder --win --mac --linux",
-    "electron:publish": "npm run electron:build-frontend && npm run electron:prepare-deps && electron-builder --publish always"
+    "electron:publish": "npm run electron:build-frontend && npm run electron:prepare-deps && electron-builder --publish always",
+    "generate-icons": "node scripts/generate-icons.cjs",
+    "release": "node scripts/release.cjs",
+    "release:minor": "node scripts/release.cjs minor",
+    "release:major": "node scripts/release.cjs major"
   },
   "workspaces": ["frontend", "backend"],
   "keywords": [
