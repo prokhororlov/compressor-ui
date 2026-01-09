@@ -287,6 +287,10 @@ function stopBackend() {
 
 function getIconPath() {
   if (getIsDev()) {
+    // Use .ico for Windows even in dev mode for proper taskbar icon
+    if (process.platform === 'win32') {
+      return path.join(__dirname, 'icons', 'icon.ico');
+    }
     return path.join(__dirname, 'icons', 'icon.png');
   }
   // In production, use the icon from buildResources
