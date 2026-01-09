@@ -24,7 +24,7 @@ A production-grade media processing system that runs 100% locally using Node.js.
 
 ## Prerequisites
 
-**Required:**
+**Required (only for local development):**
 
 - Node.js >= 18.0.0
 - FFmpeg (for video processing)
